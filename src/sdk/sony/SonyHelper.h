@@ -13,8 +13,12 @@ namespace MagicPodsCore
     class SonyHelper
     {
     public:
-        // Sony "DATA_MDR_v2" Bluetooth SPP service UUID (Sony Headphones Connect protocol).
-        inline static const std::string SONY_SPP_UUID = "96cc203e-5068-46ad-b32d-e316f5e069ba";
+        // Sony's "MDR_v2 over RFCOMM" service UUID, used by every XM5-and-newer
+        // headphone (including the WH-1000XM6). Earlier XM3/XM4 firmware used
+        // a different UUID (96cc203e-...) on a different protocol revision and
+        // is not currently supported here. Confirmed against
+        // mos9527/SonyHeadphonesClient libmdr/include/mdr-c/Base.h.
+        inline static const std::string MDR_V2_SPP_UUID = "956c7b26-d49a-4ba8-b03f-b17d393cb6e2";
 
         static bool IsSonyDevice(unsigned short vendorId, unsigned short productId);
         static std::string GetServiceGuid(SonyModelIds model);

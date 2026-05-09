@@ -21,8 +21,14 @@ namespace MagicPodsCore
         return false;
     }
 
-    std::string SonyHelper::GetServiceGuid(SonyModelIds /*model*/)
+    std::string SonyHelper::GetServiceGuid(SonyModelIds model)
     {
-        return SONY_SPP_UUID;
+        switch (model)
+        {
+        case SonyModelIds::Wh1000xm6:
+            return MDR_V2_SPP_UUID;
+        default:
+            return {};
+        }
     }
 }

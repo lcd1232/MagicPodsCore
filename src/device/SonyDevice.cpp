@@ -58,12 +58,12 @@ namespace MagicPodsCore
 
         device->_client = Client::CreateRFCOMM(deviceInfo->GetAddress(), SonyHelper::GetServiceGuid(static_cast<SonyModelIds>(model)));
 
-        // After connect, kick off polling the device for its current battery and ANC state.
-        // The SonyDevice will toggle the prefix automatically on each send.
-        device->_clientStartData.push_back(device->_packet.Encode(SonyMsgType::Command, 0,
-                                                                  SonyGetBatteryRequest(SonyBatterySubcommand::Headphones).Payload));
-        device->_clientStartData.push_back(device->_packet.Encode(SonyMsgType::Command, 1,
-                                                                  SonyGetAncRequest{}.Payload));
+        // No startup probes yet: the WH-1000XM6 speaks Sony's "MDR_v2" protocol,
+        // which requires a multi-step capability-negotiation handshake before
+        // it accepts arbitrary GET/SET commands. That handshake hasn't been
+        // implemented here yet, so we just open the socket and observe what
+        // the device sends. Battery / ANC will stay empty until the V2 init
+        // path lands in a follow-up.
 
         device->Init();
         return device;
