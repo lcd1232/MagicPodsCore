@@ -42,8 +42,6 @@ namespace MagicPodsCore
     {
         switch (model)
         {
-        case SonyModelIds::Wh1000xm4:
-        case SonyModelIds::Wh1000xm5:
         case SonyModelIds::Wh1000xm6:
             return true;
         default:

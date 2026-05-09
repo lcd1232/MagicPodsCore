@@ -196,11 +196,9 @@ DevicesInfoFetcher::~DevicesInfoFetcher()
             });
             return newDevice;
         }
-        else if (SonyModelIds sonyModel{};
-                 SonyHelper::IsSonyDevice(deviceInfo->GetVendorId(), deviceInfo->GetUuids()) &&
-                 ((sonyModel = SonyHelper::GetModelFromName(deviceInfo->GetName())) != SonyModelIds::Unknown))
+        else if (SonyHelper::IsSonyDevice(deviceInfo->GetVendorId(), deviceInfo->GetProductId()))
         {
-            auto newDevice = SonyDevice::Create(deviceInfo, _audioClient, _settingsService, static_cast<unsigned short>(sonyModel));
+            auto newDevice = SonyDevice::Create(deviceInfo, _audioClient, _settingsService, deviceInfo->GetProductId());
             newDevice->GetConnectedPropertyChangedEvent().Subscribe([this](size_t listenerId, bool newValue) {
                 TrySelectNewActiveDevice();
             });

@@ -6,11 +6,14 @@
 
 namespace MagicPodsCore
 {
+    // Modalias: bluetooth:v054c{ProductId}
     enum class SonyModelIds : unsigned short
     {
-        Unknown = 0,
-        Wh1000xm4 = 1,
-        Wh1000xm5 = 2,
-        Wh1000xm6 = 3,
+        Unknown = 0x0000,
+        Wh1000xm6 = 0x0f8a,
+    };
+
+    static const SonyModelIds AllSonyModelIds[] = {
+        SonyModelIds::Wh1000xm6,
     };
 }

@@ -7,7 +7,6 @@
 #include "sdk/sony/enums/SonyModelIds.h"
 
 #include <string>
-#include <vector>
 
 namespace MagicPodsCore
 {
@@ -17,8 +16,7 @@ namespace MagicPodsCore
         // Sony "DATA_MDR_v2" Bluetooth SPP service UUID (Sony Headphones Connect protocol).
         inline static const std::string SONY_SPP_UUID = "96cc203e-5068-46ad-b32d-e316f5e069ba";
 
-        static bool IsSonyDevice(unsigned short vendorId, const std::vector<std::string> &uuids);
-        static SonyModelIds GetModelFromName(const std::string &name);
+        static bool IsSonyDevice(unsigned short vendorId, unsigned short productId);
         static std::string GetServiceGuid(SonyModelIds model);
     };
 }
