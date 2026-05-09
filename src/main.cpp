@@ -408,14 +408,19 @@ void StartListeningLogSettings(SettingsService &settingsService) {
 }
 
 int main(int argc, char** argv) {
+    // Disable stdout/stderr buffering before any I/O so callers reading us via
+    // a pipe (e.g. Decky's python wrapper) see each line immediately. POSIX
+    // makes setvbuf undefined once the stream has been used, so this must run
+    // before TryToParseArguments / StartListeningLogSettings, both of which
+    // print via Logger.
+    setvbuf(stdout, NULL, _IONBF, 0);
+    setvbuf(stderr, NULL, _IONBF, 0);
+
     if (TryToParseArguments(argc, argv))
         return 0;
 
     std::shared_ptr<SettingsService> settingsService = std::make_shared<SettingsService>(SettingsService::GetConfigPath("config.toml"));
     StartListeningLogSettings(*settingsService);
-
-    // fix stdout buffering issue, when python does not receive output
-    setvbuf(stdout, NULL, _IONBF, 0);
 
     Logger::Info(CMAKE_PROJECT_NAME " " CMAKE_PROJECT_VERSION);
 
