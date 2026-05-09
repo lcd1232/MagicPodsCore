@@ -7,11 +7,13 @@
 #include "BtVendorIds.h"
 #include "sdk/aap/AapHelper.h"
 #include "sdk/sgb/GalaxyBudsHelper.h"
+#include "sdk/sony/SonyHelper.h"
 #include "StringUtils.h"
 #include "Logger.h"
 #include "device/GalaxyBudsDevice.h"
 #include "device/AapDevice.h"
 #include "device/BhfDevice.h"
+#include "device/SonyDevice.h"
 
 #include <regex>
 #include <iostream>
@@ -189,6 +191,16 @@ DevicesInfoFetcher::~DevicesInfoFetcher()
                  ((keyPair = GalaxyBudsHelper::SearchModelColor(deviceInfo->GetUuids(), deviceInfo->GetName())).first != GalaxyBudsModelIds::Unknown))
         {
             auto newDevice = GalaxyBudsDevice::Create(deviceInfo,_audioClient, _settingsService, static_cast<unsigned short>(keyPair.first));
+            newDevice->GetConnectedPropertyChangedEvent().Subscribe([this](size_t listenerId, bool newValue) {
+                TrySelectNewActiveDevice();
+            });
+            return newDevice;
+        }
+        else if (SonyModelIds sonyModel{};
+                 SonyHelper::IsSonyDevice(deviceInfo->GetVendorId(), deviceInfo->GetUuids()) &&
+                 ((sonyModel = SonyHelper::GetModelFromName(deviceInfo->GetName())) != SonyModelIds::Unknown))
+        {
+            auto newDevice = SonyDevice::Create(deviceInfo, _audioClient, _settingsService, static_cast<unsigned short>(sonyModel));
             newDevice->GetConnectedPropertyChangedEvent().Subscribe([this](size_t listenerId, bool newValue) {
                 TrySelectNewActiveDevice();
             });

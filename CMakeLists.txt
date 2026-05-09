@@ -59,6 +59,11 @@ add_executable(magicpodscore
     src/sdk/sgb/GalaxyBudsHelper.cpp
     src/sdk/sgb/GalaxyBudsPacket.cpp
 
+    src/sdk/sony/SonyHelper.cpp
+    src/sdk/sony/SonyPacket.cpp
+    src/sdk/sony/watchers/SonyAncWatcher.cpp
+    src/sdk/sony/watchers/SonyBatteryWatcher.cpp
+
     src/device/capabilities/aap/AapCapability.cpp
     src/device/capabilities/aap/AapAncCapability.cpp
     src/device/capabilities/aap/AapBatteryCapability.cpp
@@ -79,12 +84,17 @@ add_executable(magicpodscore
     src/device/capabilities/sgb/GalaxyBudsAncCapability.cpp
     src/device/capabilities/sgb/GalaxyBudsBatteryCapability.cpp
 
+    src/device/capabilities/sony/SonyCapability.cpp
+    src/device/capabilities/sony/SonyAncCapability.cpp
+    src/device/capabilities/sony/SonyBatteryCapability.cpp
+
     src/device/capabilities/bhf/BhfBatteryCapability.cpp
     src/device/capabilities/cmn/CmnBluetoothCodecCapability.cpp
 
     src/device/capabilities/Capability.cpp
     src/device/AapDevice.cpp
     src/device/GalaxyBudsDevice.cpp
+    src/device/SonyDevice.cpp
     src/device/BhfDevice.cpp
     src/device/DeviceBattery.cpp
     src/device/Device.cpp
