@@ -32,7 +32,12 @@ namespace MagicPodsCore {
         if(!ConnectToSocket(CONNECTION_TO_SOCKET_ATTEMPTS_NUMBER)) {
             _isStarted = false;
             Logger::Error("%s Connect to socket is failed.",_address.c_str());
-            std::exit(-1);
+            // Bail out of Start, but keep the process alive: calling std::exit
+            // here used to SIGSEGV the sdbus-c++ dispatcher thread because the
+            // main thread would tear down DBus state while a handler was still
+            // running. The device stays dormant; the next BlueZ reconnect event
+            // will retry Start.
+            return;
         }
         Logger::Info("%s connected", _address.c_str());
 
