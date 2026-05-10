@@ -25,6 +25,7 @@ namespace MagicPodsCore
     protected:
         nlohmann::json CreateJsonBody() override;
         void OnReceivedData(const SonyResponseData &data) override;
+        void Reset() override;
 
     public:
         explicit SonyAncCapability(SonyDevice &device);

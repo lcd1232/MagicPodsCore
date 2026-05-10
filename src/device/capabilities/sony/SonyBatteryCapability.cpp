@@ -18,8 +18,13 @@ namespace MagicPodsCore
 
     void SonyBatteryCapability::Reset()
     {
-        battery.ClearBattery();
-        SonyCapability::Reset();
+        // Keep the last known battery value visible across BlueZ
+        // disconnect/reconnect cycles - dropping it forces the frontend
+        // to remove the battery widget entirely until the next handshake
+        // repopulates it, which has been confusing in practice. The next
+        // PowerRetStatus arriving from the device will overwrite the
+        // values with truth.
+        Logger::Debug("SonyBatteryCapability::Reset (no-op for visibility)");
     }
 
     SonyBatteryCapability::SonyBatteryCapability(SonyDevice &device)

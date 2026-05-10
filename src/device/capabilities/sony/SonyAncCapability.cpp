@@ -70,6 +70,16 @@ namespace MagicPodsCore
         watcher.ProcessResponse(data);
     }
 
+    void SonyAncCapability::Reset()
+    {
+        // Don't clear isAvailable / option on disconnect: keep the ANC
+        // controls visible (at the last known mode) across BlueZ
+        // disconnect/reconnect cycles. The next V2 handshake's
+        // NcAsmRetParam reply overwrites the option to the device's
+        // current state.
+        Logger::Debug("SonyAncCapability::Reset (no-op for visibility)");
+    }
+
     SonyAncCapability::SonyAncCapability(SonyDevice &device)
         : SonyCapability("anc", false, device),
           watcher(SonyAncWatcher(static_cast<SonyModelIds>(device.GetProductId())))
