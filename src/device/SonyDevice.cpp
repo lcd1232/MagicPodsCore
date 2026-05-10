@@ -77,7 +77,6 @@ namespace MagicPodsCore
             // Every incoming command/notify must be ACKed within ~3 s or the
             // device will retransmit and eventually drop the channel.
             SendAck(f.Seq);
-            _seq = f.Seq;
 
             DriveInitStateMachine(f);
 
@@ -178,7 +177,7 @@ namespace MagicPodsCore
         if (!isConnected)
         {
             // Reset so the next reconnect re-runs the handshake.
-            _seq = 0;
+            _outboundSeq = 0;
             _initStep = SonyInitStep::NotStarted;
             return;
         }
@@ -207,12 +206,24 @@ namespace MagicPodsCore
 
     void SonyDevice::SendCommand(const std::vector<unsigned char> &payload)
     {
-        _client->SendData(_packet.Encode(SonyDataType::DataMdr, _seq, payload));
+        const unsigned char seq = _outboundSeq;
+        _outboundSeq ^= 1;
+
+        const auto frame = _packet.Encode(SonyDataType::DataMdr, seq, payload);
+        Logger::Info("Sony TX type=0c seq=%u payload=%s",
+                     static_cast<unsigned int>(seq),
+                     BodyHex(payload).c_str());
+        _client->SendData(frame);
     }
 
     void SonyDevice::SendAck(unsigned char receivedSeq)
     {
-        _client->SendData(_packet.Encode(SonyDataType::Ack, 1 - receivedSeq, {}));
+        // ACKs are addressed to the frame we just received; their seq is the
+        // bitwise complement of the inbound seq and they don't disturb our
+        // outbound counter.
+        const unsigned char ackSeq = 1 - receivedSeq;
+        Logger::Info("Sony TX type=01 seq=%u (ack)", static_cast<unsigned int>(ackSeq));
+        _client->SendData(_packet.Encode(SonyDataType::Ack, ackSeq, {}));
     }
 
     void SonyDevice::SendNcAsmSetParam(const SonyAncState &state)

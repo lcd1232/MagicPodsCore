@@ -38,10 +38,15 @@ namespace MagicPodsCore
         SonyPacket _packet{};
         Event<SonyResponseData> _responseDataReceived{};
 
-        // Shared seq toggle. The protocol uses a single 1-bit counter for both
-        // directions: every received non-ACK frame's seq becomes our outgoing
-        // seq for the next non-ACK send, and we reply ACK with `1 - seq`.
-        unsigned char _seq{0};
+        // The protocol's seq carries two roles. For ACKs it's `1 - received`,
+        // identifying the frame we're acknowledging. For our outbound non-ACK
+        // commands we maintain our *own* 1-bit toggle and flip it after each
+        // send: that's what the XM6 actually expects. Tying outbound seq to
+        // the last received seq (as a literal reading of the upstream
+        // mSeqNumber comment suggests) caused the device to silently drop
+        // some commands as duplicates when an unrelated DataMdrNo2 push from
+        // the device perturbed the shared counter mid-handshake.
+        unsigned char _outboundSeq{0};
         SonyInitStep _initStep{SonyInitStep::NotStarted};
 
         void OnResponseDataReceived(const std::vector<unsigned char> &data) override;
