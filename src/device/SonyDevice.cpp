@@ -117,6 +117,12 @@ namespace MagicPodsCore
             case SonyInitStep::Complete:
                 Logger::Info("Sony init: got SupportFunction. Sent LogSetStatus + initial battery/ANC state.");
 
+                // Init succeeded; reset the forced-reconnect budget so the
+                // next time the device gets stuck (e.g. several minutes
+                // from now after another disconnect/connect) we'll retry
+                // recovery again from scratch.
+                _forceReconnectAttempts.store(0);
+
                 // Flush any ANC SetParam the user fired off during the
                 // handshake (e.g. after a plugin Disconnect/Connect cycle).
                 // The buffered state is whatever click was most recent.
@@ -230,12 +236,14 @@ namespace MagicPodsCore
 
     void SonyDevice::RunInitWatchdog()
     {
-        // Cap retry attempts so a permanently-unresponsive device doesn't
-        // fill the log forever. Six attempts at the 3s threshold gives
-        // ~18s of patience, comfortably more than the WH-1000XM6 has
-        // ever taken to wake up after a Steam Deck reboot in practice.
-        constexpr int kMaxRetries = 6;
+        // Three retries at the 3s threshold = ~9s of patience. If the device
+        // still hasn't replied by then we ask BlueZ to recycle the link
+        // entirely (RequestForcedReconnect) - that's what unsticks the
+        // headphone-side session in the first-reconnect-after-plugin-
+        // Disconnect/Connect scenario.
+        constexpr int kMaxRetries = 3;
         int retries = 0;
+        bool exhausted = false;
 
         while (_watchdogActive.load() && retries < kMaxRetries)
         {
@@ -262,15 +270,43 @@ namespace MagicPodsCore
             SendCommand(retry.value());
             MarkInitProgress();
             ++retries;
+            if (retries >= kMaxRetries)
+                exhausted = true;
         }
 
-        if (retries >= kMaxRetries)
+        _watchdogActive.store(false);
+
+        if (exhausted && _initStep.load() != SonyInitStep::Complete)
         {
-            Logger::Warn("Sony init: watchdog gave up after %d retries; init still at step %d",
+            Logger::Warn("Sony init: watchdog exhausted %d retries at step %d; will request BlueZ reconnect",
                          kMaxRetries,
                          static_cast<int>(_initStep.load()));
+            RequestForcedReconnect();
         }
-        _watchdogActive.store(false);
+    }
+
+    void SonyDevice::RequestForcedReconnect()
+    {
+        // Cap to one forced reconnect per init session. If even that doesn't
+        // unstick the device, manual user intervention is the right path.
+        const int previousAttempts = _forceReconnectAttempts.fetch_add(1);
+        if (previousAttempts >= 1)
+        {
+            Logger::Warn("Sony: forced reconnect already attempted; giving up until next user-driven reconnect");
+            return;
+        }
+
+        Logger::Warn("Sony: requesting BlueZ Disconnect+Connect to unstick the WH-1000XM6 SPP session");
+        DisconnectAsync([this](const sdbus::Error * /*err*/) {
+            // Give the headphones a few seconds to actually drop the
+            // previous SPP session before we ask BlueZ to reconnect.
+            // Sleeping on the DBus callback thread is a no-no - kick the
+            // wait + Connect onto a detached thread.
+            std::thread([this]() {
+                std::this_thread::sleep_for(std::chrono::seconds(3));
+                ConnectAsync([](const sdbus::Error * /*err*/) {});
+            }).detach();
+        });
     }
 
     void SonyDevice::SendCommand(const std::vector<unsigned char> &payload)

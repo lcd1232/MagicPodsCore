@@ -49,6 +49,15 @@ namespace MagicPodsCore
         std::atomic<int64_t> _lastInitProgressNs{0};
         std::atomic<bool> _watchdogActive{false};
 
+        // After a plugin-driven Disconnect/Connect cycle the WH-1000XM6 has
+        // been observed to ignore every frame we send for ~10-15 s on the
+        // first reconnect (the headphone-side SPP session from the previous
+        // attempt is still warm). A second BlueZ Disconnect+Connect cycle
+        // gets it talking again. We automate that here: after the watchdog
+        // gives up, we ask the Device base class to do exactly that. Tracked
+        // so we never loop forever - one shot per init session.
+        std::atomic<int> _forceReconnectAttempts{0};
+
         // ANC SetParam requests that arrive during the V2 handshake get
         // buffered here and dispatched once init reaches Complete - sending
         // them mid-handshake would race with init queries and the XM6 just
@@ -64,6 +73,7 @@ namespace MagicPodsCore
         void RunInitWatchdog();
         void MarkInitProgress();
         std::chrono::milliseconds SinceLastInitProgress() const;
+        void RequestForcedReconnect();
 
         void SendCommand(const std::vector<unsigned char> &payload);
         void SendAck(unsigned char receivedSeq);
