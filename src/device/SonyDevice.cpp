@@ -14,27 +14,72 @@
 
 namespace MagicPodsCore
 {
+    namespace
+    {
+        std::string BodyHex(const std::vector<unsigned char> &body)
+        {
+            static const char *const hexDigits = "0123456789abcdef";
+            std::string s;
+            s.reserve(body.size() * 2);
+            for (auto b : body)
+            {
+                s.push_back(hexDigits[(b >> 4) & 0xf]);
+                s.push_back(hexDigits[b & 0xf]);
+            }
+            return s;
+        }
+    }
+
     void SonyDevice::OnResponseDataReceived(const std::vector<unsigned char> &data)
     {
-        auto parsed = _packet.Extract(data);
-        if (!parsed.has_value())
-            return;
+        // The RFCOMM read can hand us any number of frames concatenated in a
+        // single recv() buffer. Walk start (0x3E) -> end (0x3C) boundaries
+        // and extract each frame independently. Plain 0x3C / 0x3E never appear
+        // inside a properly-formed frame body (the framing layer escapes them
+        // to 0x3D 0x{2C,2E}), so a naive scan for the markers is safe.
+        size_t i = 0;
+        while (i < data.size())
+        {
+            while (i < data.size() && data[i] != SonyPacket::StartByte)
+                ++i;
+            if (i >= data.size())
+                break;
 
-        const auto &frame = parsed.value();
+            size_t end = i + 1;
+            while (end < data.size() && data[end] != SonyPacket::EndByte)
+                ++end;
+            if (end >= data.size())
+                break;
 
-        // Device-to-host ACKs carry no payload and need no further action.
-        if (frame.Type == SonyDataType::Ack)
-            return;
+            std::vector<unsigned char> frame(data.begin() + i, data.begin() + end + 1);
+            i = end + 1;
 
-        // Every incoming command/notify must be ACKed within ~3 s or the
-        // device will retransmit and eventually drop the channel.
-        SendAck(frame.Seq);
-        _seq = frame.Seq;
+            auto parsed = _packet.Extract(frame);
+            if (!parsed.has_value())
+            {
+                Logger::Warn("Sony RX: dropped %zu-byte frame (parse failed)", frame.size());
+                continue;
+            }
 
-        DriveInitStateMachine(frame);
+            const auto &f = parsed.value();
+            Logger::Info("Sony RX type=%02x seq=%u cmd=%02x body=%s",
+                         static_cast<unsigned int>(f.Type),
+                         static_cast<unsigned int>(f.Seq),
+                         static_cast<unsigned int>(f.Cmd),
+                         BodyHex(f.Body).c_str());
 
-        // Hand to capability watchers (battery, ANC, future ones).
-        _responseDataReceived.FireEvent(frame);
+            if (f.Type == SonyDataType::Ack)
+                continue;
+
+            // Every incoming command/notify must be ACKed within ~3 s or the
+            // device will retransmit and eventually drop the channel.
+            SendAck(f.Seq);
+            _seq = f.Seq;
+
+            DriveInitStateMachine(f);
+
+            _responseDataReceived.FireEvent(f);
+        }
     }
 
     void SonyDevice::DriveInitStateMachine(const SonyResponseData &frame)
