@@ -33,7 +33,7 @@ namespace MagicPodsCore {
 
     class Client {
     private:
-        static const int CONNECTION_TO_SOCKET_ATTEMPTS_NUMBER = 1;
+        static const int CONNECTION_TO_SOCKET_ATTEMPTS_NUMBER = 5;
 
         std::string _address{};
         unsigned short _port{};

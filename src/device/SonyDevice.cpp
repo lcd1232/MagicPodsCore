@@ -119,9 +119,20 @@ namespace MagicPodsCore
             return;
         }
 
-        // The base Device::Init handler already started the RFCOMM client. Now
-        // that the socket is up and the read/write threads are spinning, kick
-        // off the V2 handshake.
+        // Device::Init's handler is also subscribed to this event and is
+        // responsible for calling _client->Start() (which is what opens the
+        // RFCOMM socket and spawns the read/write threads). Since handlers
+        // fire in subscription order, our caller in Create() has to make sure
+        // we subscribe *after* Init() so we run *after* Start. Even so, Start
+        // can fail (BlueZ SDP misses, channel busy, etc.) - in that case
+        // sending into the dead client would just leak frames into a queue
+        // nothing reads, so bail.
+        if (!_client || !_client->IsStarted())
+        {
+            Logger::Warn("Sony init: client not started, skipping handshake");
+            return;
+        }
+
         if (_initStep == SonyInitStep::NotStarted)
         {
             Logger::Info("Sony init: starting handshake");
@@ -165,17 +176,19 @@ namespace MagicPodsCore
 
         device->_client = Client::CreateRFCOMM(deviceInfo->GetAddress(), SonyHelper::GetServiceGuid(static_cast<SonyModelIds>(model)));
 
-        // Bridge the connected-property change into our state machine. The
-        // base Device::Init also subscribes to this event to start/stop the
-        // client; both subscribers fire on each transition.
+        // Init() must run *before* we subscribe our connected-changed handler.
+        // Init's own subscription is what calls _client->Start() to open the
+        // RFCOMM socket; our handler then runs after it (event listeners fire
+        // in subscription order) and pushes the first handshake frame onto an
+        // already-open client.
+        device->Init();
+
         auto *raw = device.get();
         device->GetConnectedPropertyChangedEvent().Subscribe([raw](size_t, bool isConnected)
                                                              { raw->OnConnectedChanged(isConnected); });
 
-        device->Init();
-
         // If we were already connected at construction, Init started the
-        // client synchronously - kick off the handshake too.
+        // client synchronously above; kick off the handshake.
         if (device->GetConnected())
             device->OnConnectedChanged(true);
 
