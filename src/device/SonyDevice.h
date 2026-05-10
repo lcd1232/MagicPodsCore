@@ -6,6 +6,7 @@
 
 #include "Device.h"
 #include "Event.h"
+#include "sdk/sony/SonyInitStateMachine.h"
 #include "sdk/sony/SonyPacket.h"
 #include "sdk/sony/enums/SonyMsgIds.h"
 #include "sdk/sony/enums/SonyModelIds.h"
@@ -15,22 +16,6 @@
 
 namespace MagicPodsCore
 {
-    // Where we are in the V2 init handshake. The device won't reliably answer
-    // feature queries (battery, ANC) until we've walked the connect/get-info
-    // chain end-to-end and finished with LOG_SET_STATUS.
-    enum class SonyInitStep : unsigned char
-    {
-        NotStarted,
-        AwaitingProtocolInfo,
-        AwaitingCapabilityInfo,
-        AwaitingDeviceInfoFw,
-        AwaitingDeviceInfoModel,
-        AwaitingDeviceInfoSeries,
-        AwaitingSupportFunction,
-        AwaitingLogSetStatusAck,
-        Complete,
-    };
-
     class SonyDevice : public Device
     {
     private:

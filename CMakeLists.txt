@@ -13,6 +13,7 @@ add_executable(magicpodscore
 
     src/tests/TestsSgb.cpp
     src/tests/TestsAapBle.cpp
+    src/tests/TestsSony.cpp
 
     src/client/Client.cpp
     src/pulseaudio/PulseAudioClient.cpp
@@ -60,6 +61,7 @@ add_executable(magicpodscore
     src/sdk/sgb/GalaxyBudsPacket.cpp
 
     src/sdk/sony/SonyHelper.cpp
+    src/sdk/sony/SonyInitStateMachine.cpp
     src/sdk/sony/SonyPacket.cpp
     src/sdk/sony/watchers/SonyAncWatcher.cpp
     src/sdk/sony/watchers/SonyBatteryWatcher.cpp

@@ -86,89 +86,54 @@ namespace MagicPodsCore
 
     void SonyDevice::DriveInitStateMachine(const SonyResponseData &frame)
     {
-        if (_initStep == SonyInitStep::Complete)
-            return;
-        if (frame.Type != SonyDataType::DataMdr)
-            return;
+        const auto previousStep = _initStep;
+        const auto trans = ComputeSonyInitTransition(previousStep, frame);
 
-        // Expected response cmd byte for each init step.
-        const auto cmd = frame.Cmd;
-        switch (_initStep)
+        _initStep = trans.newStep;
+        for (const auto &payload : trans.commandsToSend)
+            SendCommand(payload);
+
+        if (previousStep != trans.newStep)
         {
-        case SonyInitStep::AwaitingProtocolInfo:
-            if (cmd != SonyT1Command::ConnectRetProtocolInfo)
-                return;
-            Logger::Info("Sony init: got ProtocolInfo");
-            SendCommand(SonyConnectGetCapabilityInfo::Build());
-            _initStep = SonyInitStep::AwaitingCapabilityInfo;
-            break;
+            switch (trans.newStep)
+            {
+            case SonyInitStep::AwaitingCapabilityInfo:
+                Logger::Info("Sony init: got ProtocolInfo");
+                break;
+            case SonyInitStep::AwaitingDeviceInfoFw:
+                Logger::Info("Sony init: got CapabilityInfo");
+                break;
+            case SonyInitStep::AwaitingDeviceInfoModel:
+                Logger::Info("Sony init: got DeviceInfo(FW)");
+                break;
+            case SonyInitStep::AwaitingDeviceInfoSeries:
+                Logger::Info("Sony init: got DeviceInfo(Model)");
+                break;
+            case SonyInitStep::AwaitingSupportFunction:
+                Logger::Info("Sony init: got DeviceInfo(Series)");
+                break;
+            case SonyInitStep::Complete:
+                Logger::Info("Sony init: got SupportFunction. Sent LogSetStatus + initial battery/ANC state.");
 
-        case SonyInitStep::AwaitingCapabilityInfo:
-            if (cmd != SonyT1Command::ConnectRetCapabilityInfo)
-                return;
-            Logger::Info("Sony init: got CapabilityInfo");
-            SendCommand(SonyConnectGetDeviceInfo::Build(SonyDeviceInfoType::FwVersion));
-            _initStep = SonyInitStep::AwaitingDeviceInfoFw;
-            break;
-
-        case SonyInitStep::AwaitingDeviceInfoFw:
-            if (cmd != SonyT1Command::ConnectRetDeviceInfo)
-                return;
-            Logger::Info("Sony init: got DeviceInfo(FW)");
-            SendCommand(SonyConnectGetDeviceInfo::Build(SonyDeviceInfoType::ModelName));
-            _initStep = SonyInitStep::AwaitingDeviceInfoModel;
-            break;
-
-        case SonyInitStep::AwaitingDeviceInfoModel:
-            if (cmd != SonyT1Command::ConnectRetDeviceInfo)
-                return;
-            Logger::Info("Sony init: got DeviceInfo(Model)");
-            SendCommand(SonyConnectGetDeviceInfo::Build(SonyDeviceInfoType::SeriesAndColorInfo));
-            _initStep = SonyInitStep::AwaitingDeviceInfoSeries;
-            break;
-
-        case SonyInitStep::AwaitingDeviceInfoSeries:
-            if (cmd != SonyT1Command::ConnectRetDeviceInfo)
-                return;
-            Logger::Info("Sony init: got DeviceInfo(Series)");
-            SendCommand(SonyConnectGetSupportFunction::Build());
-            _initStep = SonyInitStep::AwaitingSupportFunction;
-            break;
-
-        case SonyInitStep::AwaitingSupportFunction:
-            if (cmd != SonyT1Command::ConnectRetSupportFunction)
-                return;
-            Logger::Info("Sony init: got SupportFunction. Sending LogSetStatus.");
-            SendCommand(SonyLogSetStatus::Build());
-            _initStep = SonyInitStep::AwaitingLogSetStatusAck;
-
-            // LogSetStatus has no data response - the device only ACKs it.
-            // Fire the initial feature queries right away; the device queues
-            // them and will answer once it processes our log-set.
-            Logger::Info("Sony init: requesting initial battery + ANC state");
-            SendCommand(SonyPowerGetStatus::Build(SonyPowerInquiredType::Battery));
-            SendCommand(SonyNcAsmGetParam::Build(SonyNcAsmInquiredType::ModeNcAsmDualNcModeSwitchAndAsmSeamlessNa));
-            _initStep = SonyInitStep::Complete;
-
-            // The first PowerGetStatus reply sometimes goes missing (the XM6
-            // occasionally isn't ready to answer the moment LogSetStatus is
-            // ACKed). Schedule a couple of follow-up battery queries so the
-            // battery is visible promptly even when the very first one went
-            // unanswered. Detached and self-stops as soon as the client is
-            // torn down or the device was already updated.
-            std::thread([this]() {
-                for (auto delay : {std::chrono::seconds(3), std::chrono::seconds(7)})
-                {
-                    std::this_thread::sleep_for(delay);
-                    if (!_client || !_client->IsStarted())
-                        return;
-                    SendCommand(SonyPowerGetStatus::Build(SonyPowerInquiredType::Battery));
-                }
-            }).detach();
-            break;
-
-        default:
-            break;
+                // The first PowerGetStatus reply occasionally goes missing
+                // (the XM6 is not always ready to answer the moment we
+                // send the initial query). Schedule a couple of follow-up
+                // battery queries so the battery is visible promptly even
+                // when the very first one went unanswered. Detached; self-
+                // exits if the client was torn down in the meantime.
+                std::thread([this]() {
+                    for (auto delay : {std::chrono::seconds(3), std::chrono::seconds(7)})
+                    {
+                        std::this_thread::sleep_for(delay);
+                        if (!_client || !_client->IsStarted())
+                            return;
+                        SendCommand(SonyPowerGetStatus::Build(SonyPowerInquiredType::Battery));
+                    }
+                }).detach();
+                break;
+            default:
+                break;
+            }
         }
     }
 
