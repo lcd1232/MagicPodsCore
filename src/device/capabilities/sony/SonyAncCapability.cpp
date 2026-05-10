@@ -74,17 +74,21 @@ namespace MagicPodsCore
         : SonyCapability("anc", false, device),
           watcher(SonyAncWatcher(static_cast<SonyModelIds>(device.GetProductId())))
     {
+        // Mark the capability available from the start with a default Off
+        // state. The WH-1000XM6 doesn't reply to the initial NcAsmGetParam at
+        // the end of the V2 handshake; it only emits NcAsmNtfyParam frames
+        // when state actually changes (or in response to a SetParam). Without
+        // this, the ANC controls would stay hidden in the UI until the user
+        // toggled the headphones' physical button - and worse, some
+        // frontends snapshot capabilities at first GetAll and never refresh
+        // them from later broadcasts. Once a real notify arrives the option
+        // updates to match the device.
+        isAvailable = true;
+
         watcherAncChangedEventId = watcher.GetAncChangedEvent().Subscribe([this](size_t, const SonyAncState &state) {
             lastState = state;
             DeviceAncModes newOption = SonyStateToDeviceAncMode(state);
-            if (!isAvailable)
-            {
-                isAvailable = true;
-                option = newOption;
-                Logger::Info("ANC updated: %s", DeviceAncModesToString(option).c_str());
-                _onChanged.FireEvent(*this);
-            }
-            else if (option != newOption)
+            if (option != newOption)
             {
                 option = newOption;
                 Logger::Info("ANC updated: %s", DeviceAncModesToString(option).c_str());

@@ -12,6 +12,9 @@
 #include "sdk/sony/enums/SonyAnc.h"
 #include "sdk/sony/setters/SonySetAnc.h"
 
+#include <chrono>
+#include <thread>
+
 namespace MagicPodsCore
 {
     namespace
@@ -147,6 +150,22 @@ namespace MagicPodsCore
             SendCommand(SonyPowerGetStatus::Build(SonyPowerInquiredType::Battery));
             SendCommand(SonyNcAsmGetParam::Build(SonyNcAsmInquiredType::ModeNcAsmDualNcModeSwitchAndAsmSeamlessNa));
             _initStep = SonyInitStep::Complete;
+
+            // The first PowerGetStatus reply sometimes goes missing (the XM6
+            // occasionally isn't ready to answer the moment LogSetStatus is
+            // ACKed). Schedule a couple of follow-up battery queries so the
+            // battery is visible promptly even when the very first one went
+            // unanswered. Detached and self-stops as soon as the client is
+            // torn down or the device was already updated.
+            std::thread([this]() {
+                for (auto delay : {std::chrono::seconds(3), std::chrono::seconds(7)})
+                {
+                    std::this_thread::sleep_for(delay);
+                    if (!_client || !_client->IsStarted())
+                        return;
+                    SendCommand(SonyPowerGetStatus::Build(SonyPowerInquiredType::Battery));
+                }
+            }).detach();
             break;
 
         default:
