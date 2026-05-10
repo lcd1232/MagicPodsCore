@@ -182,26 +182,46 @@ namespace MagicPodsCore
             return;
         }
 
-        // Device::Init's handler is also subscribed to this event and is
-        // responsible for calling _client->Start() (which is what opens the
-        // RFCOMM socket and spawns the read/write threads). Since handlers
-        // fire in subscription order, our caller in Create() has to make sure
-        // we subscribe *after* Init() so we run *after* Start. Even so, Start
-        // can fail (BlueZ SDP misses, channel busy, etc.) - in that case
-        // sending into the dead client would just leak frames into a queue
-        // nothing reads, so bail.
-        if (!_client || !_client->IsStarted())
+        StartHandshakeWhenClientReady();
+    }
+
+    void SonyDevice::StartHandshakeWhenClientReady()
+    {
+        // Whichever event triggers the handshake (Device::Init synchronously
+        // starting the client at construction, vs Device's BlueZ
+        // connected-status handler firing _onConnectedPropertyChangedEvent
+        // *before* it calls _client->Start() on a reconnect), we want the
+        // handshake to fire as soon as the RFCOMM socket is actually up. If
+        // it's already up, kick off immediately; otherwise poll briefly on a
+        // detached thread so a reconnect doesn't leave the V2 init missing.
+        if (_client && _client->IsStarted())
         {
-            Logger::Warn("Sony init: client not started, skipping handshake");
+            if (_initStep == SonyInitStep::NotStarted)
+            {
+                Logger::Info("Sony init: starting handshake");
+                SendCommand(SonyConnectGetProtocolInfo::Build());
+                _initStep = SonyInitStep::AwaitingProtocolInfo;
+            }
             return;
         }
 
-        if (_initStep == SonyInitStep::NotStarted)
-        {
-            Logger::Info("Sony init: starting handshake");
-            SendCommand(SonyConnectGetProtocolInfo::Build());
-            _initStep = SonyInitStep::AwaitingProtocolInfo;
-        }
+        std::thread([this]() {
+            for (int i = 0; i < 20; ++i)
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                if (!_client)
+                    return;
+                if (!_client->IsStarted())
+                    continue;
+                if (_initStep != SonyInitStep::NotStarted)
+                    return;
+                Logger::Info("Sony init: starting handshake (after %dms wait)", (i + 1) * 500);
+                SendCommand(SonyConnectGetProtocolInfo::Build());
+                _initStep = SonyInitStep::AwaitingProtocolInfo;
+                return;
+            }
+            Logger::Warn("Sony init: client never started after ~10s, giving up handshake");
+        }).detach();
     }
 
     void SonyDevice::SendCommand(const std::vector<unsigned char> &payload)

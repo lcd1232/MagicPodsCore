@@ -52,6 +52,7 @@ namespace MagicPodsCore
         void OnResponseDataReceived(const std::vector<unsigned char> &data) override;
         void DriveInitStateMachine(const SonyResponseData &frame);
         void OnConnectedChanged(bool isConnected);
+        void StartHandshakeWhenClientReady();
 
         void SendCommand(const std::vector<unsigned char> &payload);
         void SendAck(unsigned char receivedSeq);
