@@ -13,12 +13,6 @@
 #include <exception>
 
 namespace MagicPodsCore {
-    // RFCOMM service discovery against some headphones (notably the Sony
-    // WH-1000XM6) is intermittent: the same paired+connected device can return
-    // an empty SDP record set on one attempt and the right RFCOMM channel a
-    // second later. Retry a handful of times with a 1s gap before giving up.
-    static_assert(true, "see CONNECTION_TO_SOCKET_ATTEMPTS_NUMBER below");
-
     Client::Client(const std::string& address, unsigned short port, ClientConnectionType connectionType)
         : _address{address}, _port{port}, _connectionType{connectionType} {}
 

@@ -33,6 +33,11 @@ namespace MagicPodsCore {
 
     class Client {
     private:
+        // RFCOMM service discovery on some headsets (notably the Sony
+        // WH-1000XM6) is intermittent: the same paired+connected device can
+        // return an empty SDP record set on one attempt and the right RFCOMM
+        // channel on the next. Retry a handful of times with a 1s gap
+        // (ConnectToSocket sleeps between attempts) before giving up.
         static const int CONNECTION_TO_SOCKET_ATTEMPTS_NUMBER = 5;
 
         std::string _address{};
