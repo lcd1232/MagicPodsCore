@@ -62,6 +62,7 @@ add_executable(magicpodscore
 
     src/sdk/sony/SonyHelper.cpp
     src/sdk/sony/SonyInitStateMachine.cpp
+    src/sdk/sony/SonyInitWatchdog.cpp
     src/sdk/sony/SonyPacket.cpp
     src/sdk/sony/watchers/SonyAncWatcher.cpp
     src/sdk/sony/watchers/SonyBatteryWatcher.cpp

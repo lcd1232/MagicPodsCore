@@ -38,6 +38,13 @@ namespace MagicPodsCore
         bool TestIsSonyDeviceRejectsOtherVendor();
         bool TestIsSonyDeviceRejectsUnknownProductId();
 
+        // V2 init watchdog (pure)
+        bool TestWatchdogRetriesProtocolInfoAfterTimeout();
+        bool TestWatchdogRetriesEachAwaitingStepAfterTimeout();
+        bool TestWatchdogQuietWhileWaiting();
+        bool TestWatchdogQuietWhenComplete();
+        bool TestWatchdogQuietBeforeStart();
+
         // V2 init state machine (pure)
         bool TestInitMachineProtocolInfoToCapabilityInfo();
         bool TestInitMachineCapabilityInfoToDeviceInfoFw();

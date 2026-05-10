@@ -7,6 +7,7 @@
 #include "Logger.h"
 #include "sdk/sony/SonyHelper.h"
 #include "sdk/sony/SonyInitStateMachine.h"
+#include "sdk/sony/SonyInitWatchdog.h"
 #include "sdk/sony/SonyPacket.h"
 #include "sdk/sony/enums/SonyAnc.h"
 #include "sdk/sony/enums/SonyMsgIds.h"
@@ -388,6 +389,83 @@ namespace MagicPodsCore
         }
     }
 
+    // ---- V2 init watchdog ----
+    //
+    // Repro for the bug observed after a Steam Deck reboot at 15:06:33 on
+    // 2026-05-10: the WH-1000XM6 reconnected (15:06:57), our RFCOMM client
+    // came up, the handshake fired its first GetProtocolInfo at 15:06:58
+    // ... and the device sent absolutely nothing back, ever. There was no
+    // watchdog to re-send the query, so the state machine sat at
+    // AwaitingProtocolInfo forever and battery + ANC stayed empty.
+    //
+    // These tests describe the watchdog behavior we expect. They live up
+    // here (above the rest of the state-machine tests) so it's clear they
+    // were the failing tests that drove the fix.
+
+    bool TestsSony::TestWatchdogRetriesProtocolInfoAfterTimeout()
+    {
+        // 4 seconds in AwaitingProtocolInfo with no progress. Watchdog must
+        // hand back the GetProtocolInfo payload so the device gets another
+        // chance to reply.
+        const auto retry = ComputeSonyInitWatchdogTick(
+            SonyInitStep::AwaitingProtocolInfo,
+            std::chrono::seconds(4));
+        return retry.has_value()
+            && retry.value() == std::vector<unsigned char>{0x00, 0x00};
+    }
+
+    bool TestsSony::TestWatchdogRetriesEachAwaitingStepAfterTimeout()
+    {
+        // Every "Awaiting*" step must have a defined retry payload that
+        // matches the original outbound for that step. If a step is silently
+        // un-retried, a stalled handshake would never recover.
+        const std::vector<std::pair<SonyInitStep, std::vector<unsigned char>>> expected = {
+            {SonyInitStep::AwaitingProtocolInfo,    {0x00, 0x00}},
+            {SonyInitStep::AwaitingCapabilityInfo,  {0x02, 0x00}},
+            {SonyInitStep::AwaitingDeviceInfoFw,    {0x04, 0x02}},
+            {SonyInitStep::AwaitingDeviceInfoModel, {0x04, 0x01}},
+            {SonyInitStep::AwaitingDeviceInfoSeries,{0x04, 0x03}},
+            {SonyInitStep::AwaitingSupportFunction, {0x06, 0x00}},
+        };
+        for (const auto &[step, payload] : expected)
+        {
+            const auto retry = ComputeSonyInitWatchdogTick(step, std::chrono::seconds(5));
+            if (!retry.has_value() || retry.value() != payload)
+                return false;
+        }
+        return true;
+    }
+
+    bool TestsSony::TestWatchdogQuietWhileWaiting()
+    {
+        // Only 500ms in - way too soon to retry. The XM6 is sometimes slow
+        // to reply but should not see a duplicate query in a tight loop.
+        const auto retry = ComputeSonyInitWatchdogTick(
+            SonyInitStep::AwaitingProtocolInfo,
+            std::chrono::milliseconds(500));
+        return !retry.has_value();
+    }
+
+    bool TestsSony::TestWatchdogQuietWhenComplete()
+    {
+        // Once init has completed, the watchdog must never fire - any
+        // resends after that would be unsolicited noise.
+        const auto retry = ComputeSonyInitWatchdogTick(
+            SonyInitStep::Complete,
+            std::chrono::seconds(60));
+        return !retry.has_value();
+    }
+
+    bool TestsSony::TestWatchdogQuietBeforeStart()
+    {
+        // Before the handshake has even started there is nothing to retry.
+        const auto retry = ComputeSonyInitWatchdogTick(
+            SonyInitStep::NotStarted,
+            std::chrono::seconds(60));
+        return !retry.has_value();
+    }
+
+    // ---- V2 init state machine ----
     bool TestsSony::TestInitMachineProtocolInfoToCapabilityInfo()
     {
         // CONNECT_RET_PROTOCOL_INFO: cmd=0x01, inquiredType=0x00, then
@@ -529,6 +607,12 @@ namespace MagicPodsCore
         Test("SonyHelper.IsSonyDeviceMatchesWh1000xm6", TestIsSonyDeviceMatchesWh1000xm6());
         Test("SonyHelper.IsSonyDeviceRejectsOtherVendor", TestIsSonyDeviceRejectsOtherVendor());
         Test("SonyHelper.IsSonyDeviceRejectsUnknownProductId", TestIsSonyDeviceRejectsUnknownProductId());
+
+        Test("SonyInitWatchdog.RetriesProtocolInfoAfterTimeout", TestWatchdogRetriesProtocolInfoAfterTimeout());
+        Test("SonyInitWatchdog.RetriesEachAwaitingStepAfterTimeout", TestWatchdogRetriesEachAwaitingStepAfterTimeout());
+        Test("SonyInitWatchdog.QuietWhileWaiting", TestWatchdogQuietWhileWaiting());
+        Test("SonyInitWatchdog.QuietWhenComplete", TestWatchdogQuietWhenComplete());
+        Test("SonyInitWatchdog.QuietBeforeStart", TestWatchdogQuietBeforeStart());
 
         Test("SonyInitMachine.ProtocolInfoToCapabilityInfo", TestInitMachineProtocolInfoToCapabilityInfo());
         Test("SonyInitMachine.CapabilityInfoToDeviceInfoFw", TestInitMachineCapabilityInfoToDeviceInfoFw());

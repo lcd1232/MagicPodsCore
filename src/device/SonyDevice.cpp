@@ -9,6 +9,7 @@
 #include "capabilities/sony/SonyAncCapability.h"
 #include "capabilities/sony/SonyBatteryCapability.h"
 #include "sdk/sony/SonyHelper.h"
+#include "sdk/sony/SonyInitWatchdog.h"
 #include "sdk/sony/enums/SonyAnc.h"
 #include "sdk/sony/setters/SonySetAnc.h"
 
@@ -86,15 +87,16 @@ namespace MagicPodsCore
 
     void SonyDevice::DriveInitStateMachine(const SonyResponseData &frame)
     {
-        const auto previousStep = _initStep;
+        const auto previousStep = _initStep.load();
         const auto trans = ComputeSonyInitTransition(previousStep, frame);
 
-        _initStep = trans.newStep;
+        _initStep.store(trans.newStep);
         for (const auto &payload : trans.commandsToSend)
             SendCommand(payload);
 
         if (previousStep != trans.newStep)
         {
+            MarkInitProgress();
             switch (trans.newStep)
             {
             case SonyInitStep::AwaitingCapabilityInfo:
@@ -141,9 +143,11 @@ namespace MagicPodsCore
     {
         if (!isConnected)
         {
-            // Reset so the next reconnect re-runs the handshake.
-            _outboundSeq = 0;
-            _initStep = SonyInitStep::NotStarted;
+            // Reset so the next reconnect re-runs the handshake. Tell the
+            // watchdog to bow out; the next reconnect will spawn a fresh one.
+            _watchdogActive.store(false);
+            _outboundSeq.store(0);
+            _initStep.store(SonyInitStep::NotStarted);
             return;
         }
 
@@ -161,11 +165,13 @@ namespace MagicPodsCore
         // detached thread so a reconnect doesn't leave the V2 init missing.
         if (_client && _client->IsStarted())
         {
-            if (_initStep == SonyInitStep::NotStarted)
+            if (_initStep.load() == SonyInitStep::NotStarted)
             {
                 Logger::Info("Sony init: starting handshake");
                 SendCommand(SonyConnectGetProtocolInfo::Build());
-                _initStep = SonyInitStep::AwaitingProtocolInfo;
+                _initStep.store(SonyInitStep::AwaitingProtocolInfo);
+                MarkInitProgress();
+                StartInitWatchdog();
             }
             return;
         }
@@ -178,21 +184,93 @@ namespace MagicPodsCore
                     return;
                 if (!_client->IsStarted())
                     continue;
-                if (_initStep != SonyInitStep::NotStarted)
+                if (_initStep.load() != SonyInitStep::NotStarted)
                     return;
                 Logger::Info("Sony init: starting handshake (after %dms wait)", (i + 1) * 500);
                 SendCommand(SonyConnectGetProtocolInfo::Build());
-                _initStep = SonyInitStep::AwaitingProtocolInfo;
+                _initStep.store(SonyInitStep::AwaitingProtocolInfo);
+                MarkInitProgress();
+                StartInitWatchdog();
                 return;
             }
             Logger::Warn("Sony init: client never started after ~10s, giving up handshake");
         }).detach();
     }
 
+    void SonyDevice::MarkInitProgress()
+    {
+        _lastInitProgressNs.store(std::chrono::steady_clock::now().time_since_epoch().count());
+    }
+
+    std::chrono::milliseconds SonyDevice::SinceLastInitProgress() const
+    {
+        const auto last = _lastInitProgressNs.load();
+        if (last == 0)
+            return std::chrono::milliseconds(0);
+        const auto now = std::chrono::steady_clock::now().time_since_epoch().count();
+        return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::nanoseconds(now - last));
+    }
+
+    void SonyDevice::StartInitWatchdog()
+    {
+        if (_watchdogActive.exchange(true))
+            return; // already running
+
+        std::thread([this]() { RunInitWatchdog(); }).detach();
+    }
+
+    void SonyDevice::RunInitWatchdog()
+    {
+        // Cap retry attempts so a permanently-unresponsive device doesn't
+        // fill the log forever. Six attempts at the 3s threshold gives
+        // ~18s of patience, comfortably more than the WH-1000XM6 has
+        // ever taken to wake up after a Steam Deck reboot in practice.
+        constexpr int kMaxRetries = 6;
+        int retries = 0;
+
+        while (_watchdogActive.load() && retries < kMaxRetries)
+        {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            if (!_watchdogActive.load())
+                break;
+
+            const auto step = _initStep.load();
+            if (step == SonyInitStep::Complete || step == SonyInitStep::NotStarted)
+                break;
+
+            if (!_client || !_client->IsStarted())
+                break;
+
+            const auto retry = ComputeSonyInitWatchdogTick(step, SinceLastInitProgress());
+            if (!retry.has_value())
+                continue;
+
+            Logger::Info("Sony init: watchdog re-sending step %d (idle for %lldms, attempt %d/%d)",
+                         static_cast<int>(step),
+                         static_cast<long long>(SinceLastInitProgress().count()),
+                         retries + 1,
+                         kMaxRetries);
+            SendCommand(retry.value());
+            MarkInitProgress();
+            ++retries;
+        }
+
+        if (retries >= kMaxRetries)
+        {
+            Logger::Warn("Sony init: watchdog gave up after %d retries; init still at step %d",
+                         kMaxRetries,
+                         static_cast<int>(_initStep.load()));
+        }
+        _watchdogActive.store(false);
+    }
+
     void SonyDevice::SendCommand(const std::vector<unsigned char> &payload)
     {
-        const unsigned char seq = _outboundSeq;
-        _outboundSeq ^= 1;
+        // fetch_xor returns the previous value and atomically toggles the
+        // counter. With multiple sender threads (reading thread for ACKs +
+        // state-machine sends, battery retry, init watchdog) this keeps the
+        // outbound seq from going off the rails.
+        const unsigned char seq = _outboundSeq.fetch_xor(1);
 
         const auto frame = _packet.Encode(SonyDataType::DataMdr, seq, payload);
         Logger::Info("Sony TX type=0c seq=%u payload=%s",

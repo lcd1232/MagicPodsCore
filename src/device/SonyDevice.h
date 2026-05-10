@@ -14,6 +14,9 @@
 #include "sdk/sony/structs/SonyResponseData.h"
 #include "settings/SettingsService.h"
 
+#include <atomic>
+#include <chrono>
+
 namespace MagicPodsCore
 {
     class SonyDevice : public Device
@@ -31,13 +34,28 @@ namespace MagicPodsCore
         // mSeqNumber comment suggests) caused the device to silently drop
         // some commands as duplicates when an unrelated DataMdrNo2 push from
         // the device perturbed the shared counter mid-handshake.
-        unsigned char _outboundSeq{0};
-        SonyInitStep _initStep{SonyInitStep::NotStarted};
+        //
+        // Atomic so the V2 init watchdog can call SendCommand from its own
+        // worker thread without racing the reading thread's ACK / state-
+        // machine sends.
+        std::atomic<unsigned char> _outboundSeq{0};
+        std::atomic<SonyInitStep> _initStep{SonyInitStep::NotStarted};
+
+        // Nanoseconds since steady_clock epoch at the last *progress* event
+        // (a state-machine transition or a watchdog re-send). The watchdog
+        // checks (now - this) against its retry threshold to decide whether
+        // the current step has been silent too long.
+        std::atomic<int64_t> _lastInitProgressNs{0};
+        std::atomic<bool> _watchdogActive{false};
 
         void OnResponseDataReceived(const std::vector<unsigned char> &data) override;
         void DriveInitStateMachine(const SonyResponseData &frame);
         void OnConnectedChanged(bool isConnected);
         void StartHandshakeWhenClientReady();
+        void StartInitWatchdog();
+        void RunInitWatchdog();
+        void MarkInitProgress();
+        std::chrono::milliseconds SinceLastInitProgress() const;
 
         void SendCommand(const std::vector<unsigned char> &payload);
         void SendAck(unsigned char receivedSeq);
