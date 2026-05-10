@@ -4,48 +4,47 @@
 
 #include "SonyAncCapability.h"
 
+#include "Logger.h"
+
 namespace MagicPodsCore
 {
-    DeviceAncModes SonyAncCapability::SonyStateToDeviceAncModes(const SonyAncState &state)
+    DeviceAncModes SonyAncCapability::SonyStateToDeviceAncMode(const SonyAncState &state)
     {
-        if (state.AncSwitch == SonyAncSwitch::Off)
+        if (state.MasterEnabled == SonyNcAsmOnOff::Off)
             return DeviceAncModes::Off;
 
-        switch (state.AncFilter)
+        switch (state.Mode)
         {
-        case SonyAncFilter::Anc:
+        case SonyNcAsmMode::Nc:
             return DeviceAncModes::NoiseCancellation;
-        case SonyAncFilter::Wind:
-            return DeviceAncModes::WindCancellation;
-        case SonyAncFilter::Ambient:
+        case SonyNcAsmMode::Asm:
             return DeviceAncModes::Transparency;
-        default:
-            return DeviceAncModes::Off;
         }
+        return DeviceAncModes::Off;
     }
 
-    SonyAncState SonyAncCapability::DeviceAncModesToSonyState(DeviceAncModes mode, const SonyAncState &previous)
+    SonyAncState SonyAncCapability::DeviceAncModeToSonyState(DeviceAncModes mode, const SonyAncState &previous)
     {
         SonyAncState next = previous;
+        next.ChangeStatus = SonyValueChangeStatus::Changed;
+
         switch (mode)
         {
         case DeviceAncModes::Off:
-            next.AncSwitch = SonyAncSwitch::Off;
+            next.MasterEnabled = SonyNcAsmOnOff::Off;
             break;
         case DeviceAncModes::NoiseCancellation:
-            next.AncSwitch = SonyAncSwitch::On;
-            next.AncFilter = SonyAncFilter::Anc;
-            break;
-        case DeviceAncModes::WindCancellation:
-            next.AncSwitch = SonyAncSwitch::On;
-            next.AncFilter = SonyAncFilter::Wind;
+            next.MasterEnabled = SonyNcAsmOnOff::On;
+            next.Mode = SonyNcAsmMode::Nc;
             break;
         case DeviceAncModes::Transparency:
-            next.AncSwitch = SonyAncSwitch::On;
-            next.AncFilter = SonyAncFilter::Ambient;
+            next.MasterEnabled = SonyNcAsmOnOff::On;
+            next.Mode = SonyNcAsmMode::Asm;
             break;
         default:
-            next.AncSwitch = SonyAncSwitch::Off;
+            // Adaptive / WindCancellation aren't represented in this NA payload;
+            // fall back to Off rather than send a malformed state.
+            next.MasterEnabled = SonyNcAsmOnOff::Off;
             break;
         }
         return next;
@@ -53,24 +52,12 @@ namespace MagicPodsCore
 
     nlohmann::json SonyAncCapability::CreateJsonBody()
     {
-        const auto filters = SonyAncWatcher::GetAncFiltersFor(static_cast<SonyModelIds>(device.GetProductId()));
-
-        unsigned char optionsFlag = static_cast<unsigned char>(DeviceAncModes::Off);
-        for (auto filter : filters)
-        {
-            switch (filter)
-            {
-            case SonyAncFilter::Anc:
-                optionsFlag |= static_cast<unsigned char>(DeviceAncModes::NoiseCancellation);
-                break;
-            case SonyAncFilter::Wind:
-                optionsFlag |= static_cast<unsigned char>(DeviceAncModes::WindCancellation);
-                break;
-            case SonyAncFilter::Ambient:
-                optionsFlag |= static_cast<unsigned char>(DeviceAncModes::Transparency);
-                break;
-            }
-        }
+        // The NA payload only directly maps to NoiseCancellation / Transparency
+        // (plus Off). Don't advertise modes the headphone won't actually accept.
+        unsigned char optionsFlag =
+            static_cast<unsigned char>(DeviceAncModes::Off) |
+            static_cast<unsigned char>(DeviceAncModes::NoiseCancellation) |
+            static_cast<unsigned char>(DeviceAncModes::Transparency);
 
         auto bodyJson = nlohmann::json::object();
         bodyJson["selected"] = option;
@@ -87,9 +74,9 @@ namespace MagicPodsCore
         : SonyCapability("anc", false, device),
           watcher(SonyAncWatcher(static_cast<SonyModelIds>(device.GetProductId())))
     {
-        watcherAncChangedEventId = watcher.GetAncChangedEvent().Subscribe([this](size_t id, const SonyAncState &state) {
+        watcherAncChangedEventId = watcher.GetAncChangedEvent().Subscribe([this](size_t, const SonyAncState &state) {
             lastState = state;
-            DeviceAncModes newOption = SonyStateToDeviceAncModes(state);
+            DeviceAncModes newOption = SonyStateToDeviceAncMode(state);
             if (!isAvailable)
             {
                 isAvailable = true;
@@ -132,8 +119,8 @@ namespace MagicPodsCore
         }
 
         DeviceAncModes mode = static_cast<DeviceAncModes>(selected);
-        SonyAncState nextState = DeviceAncModesToSonyState(mode, lastState);
-        SendData(SonySetAnc(nextState));
-        Logger::Debug("SonyAncCapability::SetFromJson set option to %s", DeviceAncModesToString(mode).c_str());
+        SonyAncState nextState = DeviceAncModeToSonyState(mode, lastState);
+        device.SendNcAsmSetParam(nextState);
+        Logger::Debug("SonyAncCapability::SetFromJson sent NcAsmSetParam for %s", DeviceAncModesToString(mode).c_str());
     }
 }

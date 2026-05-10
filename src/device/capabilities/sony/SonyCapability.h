@@ -6,7 +6,6 @@
 
 #include "device/SonyDevice.h"
 #include "device/capabilities/Capability.h"
-#include "sdk/sony/setters/SonySetAnc.h"
 #include "sdk/sony/structs/SonyResponseData.h"
 
 namespace MagicPodsCore
@@ -20,9 +19,6 @@ namespace MagicPodsCore
     protected:
         SonyDevice &device;
         virtual void OnReceivedData(const SonyResponseData &data) = 0;
-        void SendData(const SonySetAnc &setter);
-        void SendData(const SonyGetAncRequest &request);
-        void SendData(const SonyGetBatteryRequest &request);
         void Reset() override;
 
     public:

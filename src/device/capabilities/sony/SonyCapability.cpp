@@ -6,21 +6,6 @@
 
 namespace MagicPodsCore
 {
-    void SonyCapability::SendData(const SonySetAnc &setter)
-    {
-        device.SendData(setter);
-    }
-
-    void SonyCapability::SendData(const SonyGetAncRequest &request)
-    {
-        device.SendData(request);
-    }
-
-    void SonyCapability::SendData(const SonyGetBatteryRequest &request)
-    {
-        device.SendData(request);
-    }
-
     void SonyCapability::Reset()
     {
         Capability::Reset();

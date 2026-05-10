@@ -5,54 +5,48 @@
 #include "SonyAncWatcher.h"
 
 #include "Logger.h"
+#include "sdk/sony/enums/SonyAnc.h"
 
 namespace MagicPodsCore
 {
     void SonyAncWatcher::ProcessResponse(const SonyResponseData &data)
     {
-        if (data.Type != SonyMsgType::Command)
+        if (data.Type != SonyDataType::DataMdr)
+            return;
+        if (data.Cmd != SonyT1Command::NcAsmRetParam && data.Cmd != SonyT1Command::NcAsmNtfyParam)
             return;
 
-        // Both the explicit get reply (AncRet) and the unsolicited push (AncNotify) carry the same body shape.
-        if (data.Id != SonyMsgIds::AncRet && data.Id != SonyMsgIds::AncNotify)
+        // Body layout for the WH-1000XM6 NC/ASM "_NA" payload (15 bytes total):
+        //   [0]=type [1]=seq [2..5]=size [6]=cmd [7]=inquiredType
+        //   [8]=changeStatus [9]=masterOnOff [10]=ncAsmMode [11]=ambientMode
+        //   [12]=ambientLevel [13]=autoAsmOnOff [14]=adaptiveSensitivity
+        if (data.Body.size() < 15)
             return;
-
-        // Body layout (offsets relative to start of body, i.e. without the 0x3e prefix):
-        //   [0]=type [1]=prefix [2..5]=size [6]=cmd [7]=0x02 [8]=switch [9]=0x02
-        //   [10]=filter [11]=0x01 [12]=ambient-voice [13]=volume
-        if (data.Body.size() < 14)
+        if (static_cast<SonyNcAsmInquiredType>(data.Body[7]) != SonyNcAsmInquiredType::ModeNcAsmDualNcModeSwitchAndAsmSeamlessNa)
             return;
 
         SonyAncState state{};
-        state.AncSwitch = data.Body[8] == 0 ? SonyAncSwitch::Off : SonyAncSwitch::On;
-        state.AncFilter = static_cast<SonyAncFilter>(data.Body[10]);
-        state.AmbientVoice = static_cast<SonyAncFilterAmbientVoice>(data.Body[12]);
-        state.Volume = data.Body[13];
+        state.ChangeStatus            = static_cast<SonyValueChangeStatus>(data.Body[8]);
+        state.MasterEnabled           = static_cast<SonyNcAsmOnOff>(data.Body[9]);
+        state.Mode                    = static_cast<SonyNcAsmMode>(data.Body[10]);
+        state.AmbientMode             = static_cast<SonyAmbientSoundMode>(data.Body[11]);
+        state.AmbientLevel            = data.Body[12];
+        state.NoiseAdaptiveEnabled    = static_cast<SonyNcAsmOnOff>(data.Body[13]);
+        state.NoiseAdaptiveSensitivity = static_cast<SonyNoiseAdaptiveSensitivity>(data.Body[14]);
 
-        Logger::Debug("Sony ANC: switch=%d filter=%d voice=%d volume=%d",
-                      static_cast<int>(state.AncSwitch),
-                      static_cast<int>(state.AncFilter),
-                      static_cast<int>(state.AmbientVoice),
-                      state.Volume);
+        Logger::Debug("Sony ANC: master=%d mode=%d ambient=%d level=%d autoAsm=%d sens=%d",
+                      static_cast<int>(state.MasterEnabled),
+                      static_cast<int>(state.Mode),
+                      static_cast<int>(state.AmbientMode),
+                      state.AmbientLevel,
+                      static_cast<int>(state.NoiseAdaptiveEnabled),
+                      static_cast<int>(state.NoiseAdaptiveSensitivity));
 
         _ancChanged.FireEvent(state);
     }
 
-    bool SonyAncWatcher::IsSupport(SonyModelIds model)
+    bool SonyAncWatcher::IsSupported(SonyModelIds model)
     {
-        switch (model)
-        {
-        case SonyModelIds::Wh1000xm6:
-            return true;
-        default:
-            return false;
-        }
-    }
-
-    std::vector<SonyAncFilter> SonyAncWatcher::GetAncFiltersFor(SonyModelIds model)
-    {
-        if (IsSupport(model))
-            return {SonyAncFilter::Anc, SonyAncFilter::Ambient, SonyAncFilter::Wind};
-        return {};
+        return model == SonyModelIds::Wh1000xm6;
     }
 }

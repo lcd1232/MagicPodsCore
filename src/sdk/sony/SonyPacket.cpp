@@ -31,14 +31,14 @@ namespace MagicPodsCore
         }
     }
 
-    std::vector<unsigned char> SonyPacket::Encode(SonyMsgType type, unsigned char prefix, const std::vector<unsigned char> &payload) const
+    std::vector<unsigned char> SonyPacket::Encode(SonyDataType type, unsigned char seq, const std::vector<unsigned char> &payload) const
     {
         const auto size = static_cast<unsigned int>(payload.size());
 
         std::vector<unsigned char> body{};
         body.reserve(7 + payload.size());
         body.push_back(static_cast<unsigned char>(type));
-        body.push_back(prefix);
+        body.push_back(seq);
         body.push_back(static_cast<unsigned char>((size >> 24) & 0xff));
         body.push_back(static_cast<unsigned char>((size >> 16) & 0xff));
         body.push_back(static_cast<unsigned char>((size >> 8) & 0xff));
@@ -62,7 +62,7 @@ namespace MagicPodsCore
 
     std::optional<SonyResponseData> SonyPacket::Extract(const std::vector<unsigned char> &bytes) const
     {
-        // Minimum unescaped length: type + prefix + size32 + crc = 7 bytes,
+        // Minimum unescaped length: type + seq + size32 + crc = 7 bytes,
         // wrapped in start/end markers = 9 bytes. Anything shorter is junk.
         if (bytes.size() < 9)
             return std::nullopt;
@@ -105,14 +105,15 @@ namespace MagicPodsCore
         if (crc != receivedCrc)
             return std::nullopt;
 
-        auto type = static_cast<SonyMsgType>(body[0]);
-        unsigned char prefix = body[1];
+        auto type = static_cast<SonyDataType>(body[0]);
+        unsigned char seq = body[1];
 
-        // Command id sits at offset 6 of the body for command frames; ack frames carry no command.
-        SonyMsgIds id = SonyMsgIds::Unknown;
-        if (type == SonyMsgType::Command && body.size() >= 7)
-            id = static_cast<SonyMsgIds>(body[6]);
+        // Command id sits at offset 6 of the body for command frames; ack
+        // frames carry no payload, the value is meaningless then.
+        SonyT1Command cmd{};
+        if (body.size() >= 7)
+            cmd = static_cast<SonyT1Command>(body[6]);
 
-        return SonyResponseData{type, prefix, id, body};
+        return SonyResponseData{type, seq, cmd, body};
     }
 }

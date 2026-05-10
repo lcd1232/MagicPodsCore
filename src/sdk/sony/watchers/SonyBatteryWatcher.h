@@ -22,10 +22,7 @@ namespace MagicPodsCore
     public:
         explicit SonyBatteryWatcher(SonyModelIds model) : model(model) {}
 
-        Event<std::vector<DeviceBatteryData>> &GetBatteryChangedEvent()
-        {
-            return _batteryChanged;
-        }
+        Event<std::vector<DeviceBatteryData>> &GetBatteryChangedEvent() { return _batteryChanged; }
 
         void ProcessResponse(const SonyResponseData &data);
     };

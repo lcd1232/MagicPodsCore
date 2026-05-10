@@ -19,8 +19,8 @@ namespace MagicPodsCore
         SonyAncWatcher watcher;
         size_t watcherAncChangedEventId;
 
-        static DeviceAncModes SonyStateToDeviceAncModes(const SonyAncState &state);
-        static SonyAncState DeviceAncModesToSonyState(DeviceAncModes mode, const SonyAncState &previous);
+        static DeviceAncModes SonyStateToDeviceAncMode(const SonyAncState &state);
+        static SonyAncState DeviceAncModeToSonyState(DeviceAncModes mode, const SonyAncState &previous);
 
     protected:
         nlohmann::json CreateJsonBody() override;

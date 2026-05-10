@@ -9,16 +9,20 @@
 
 namespace MagicPodsCore
 {
-    // Decoded Sony packet: start (0x3e) and end (0x3c) bytes are stripped, CRC is validated.
-    // Body is everything between them; Id is the command byte at offset 6 of the body.
+    // A successfully framed Sony MDR_v2 message. Start (0x3E) and end (0x3C)
+    // markers are stripped, byte-stuffing is undone, and the checksum has
+    // been validated. `Body` holds the unescaped bytes between the markers
+    // *minus* the trailing checksum: that is, [type][seq][size_be32][payload].
+    // `Cmd` is body[6] when the frame carries Table-1 data; for ACKs it has no
+    // meaning (ACK frames have no payload).
     struct SonyResponseData
     {
-        SonyMsgType Type;
-        unsigned char Prefix;
-        SonyMsgIds Id;
+        SonyDataType  Type;
+        unsigned char Seq;
+        SonyT1Command Cmd;
         std::vector<unsigned char> Body;
 
-        SonyResponseData(SonyMsgType type, unsigned char prefix, SonyMsgIds id, const std::vector<unsigned char> &body)
-            : Type(type), Prefix(prefix), Id(id), Body(body) {}
+        SonyResponseData(SonyDataType type, unsigned char seq, SonyT1Command cmd, const std::vector<unsigned char> &body)
+            : Type(type), Seq(seq), Cmd(cmd), Body(body) {}
     };
 }

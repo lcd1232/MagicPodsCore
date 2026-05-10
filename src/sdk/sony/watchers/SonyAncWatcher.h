@@ -9,8 +9,6 @@
 #include "sdk/sony/structs/SonyAncState.h"
 #include "sdk/sony/structs/SonyResponseData.h"
 
-#include <vector>
-
 namespace MagicPodsCore
 {
     class SonyAncWatcher
@@ -22,14 +20,10 @@ namespace MagicPodsCore
     public:
         explicit SonyAncWatcher(SonyModelIds model) : model(model) {}
 
-        Event<SonyAncState> &GetAncChangedEvent()
-        {
-            return _ancChanged;
-        }
+        Event<SonyAncState> &GetAncChangedEvent() { return _ancChanged; }
 
         void ProcessResponse(const SonyResponseData &data);
 
-        static bool IsSupport(SonyModelIds model);
-        static std::vector<SonyAncFilter> GetAncFiltersFor(SonyModelIds model);
+        static bool IsSupported(SonyModelIds model);
     };
 }
