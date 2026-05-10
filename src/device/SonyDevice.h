@@ -6,6 +6,7 @@
 
 #include "Device.h"
 #include "Event.h"
+#include "sdk/sony/SonyDeferredAncSet.h"
 #include "sdk/sony/SonyInitStateMachine.h"
 #include "sdk/sony/SonyPacket.h"
 #include "sdk/sony/enums/SonyMsgIds.h"
@@ -47,6 +48,13 @@ namespace MagicPodsCore
         // the current step has been silent too long.
         std::atomic<int64_t> _lastInitProgressNs{0};
         std::atomic<bool> _watchdogActive{false};
+
+        // ANC SetParam requests that arrive during the V2 handshake get
+        // buffered here and dispatched once init reaches Complete - sending
+        // them mid-handshake would race with init queries and the XM6 just
+        // drops them, making the user's first click after a reconnect
+        // silently no-op.
+        SonyDeferredAncSet _deferredAncSet;
 
         void OnResponseDataReceived(const std::vector<unsigned char> &data) override;
         void DriveInitStateMachine(const SonyResponseData &frame);

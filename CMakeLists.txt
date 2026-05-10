@@ -60,6 +60,7 @@ add_executable(magicpodscore
     src/sdk/sgb/GalaxyBudsHelper.cpp
     src/sdk/sgb/GalaxyBudsPacket.cpp
 
+    src/sdk/sony/SonyDeferredAncSet.cpp
     src/sdk/sony/SonyHelper.cpp
     src/sdk/sony/SonyInitStateMachine.cpp
     src/sdk/sony/SonyInitWatchdog.cpp

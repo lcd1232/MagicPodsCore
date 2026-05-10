@@ -117,6 +117,15 @@ namespace MagicPodsCore
             case SonyInitStep::Complete:
                 Logger::Info("Sony init: got SupportFunction. Sent LogSetStatus + initial battery/ANC state.");
 
+                // Flush any ANC SetParam the user fired off during the
+                // handshake (e.g. after a plugin Disconnect/Connect cycle).
+                // The buffered state is whatever click was most recent.
+                if (auto pending = _deferredAncSet.Flush(); pending.has_value())
+                {
+                    Logger::Info("Sony: dispatching deferred NcAsmSetParam now that init is complete");
+                    SendCommand(SonyNcAsmSetParam::Build(pending.value()));
+                }
+
                 // The first PowerGetStatus reply occasionally goes missing
                 // (the XM6 is not always ready to answer the moment we
                 // send the initial query). Schedule a couple of follow-up
@@ -291,7 +300,17 @@ namespace MagicPodsCore
 
     void SonyDevice::SendNcAsmSetParam(const SonyAncState &state)
     {
-        SendCommand(SonyNcAsmSetParam::Build(state));
+        const bool initComplete = _initStep.load() == SonyInitStep::Complete;
+        const auto toSendNow = _deferredAncSet.Submit(state, initComplete);
+        if (toSendNow.has_value())
+        {
+            SendCommand(SonyNcAsmSetParam::Build(toSendNow.value()));
+        }
+        else
+        {
+            Logger::Info("Sony: deferring NcAsmSetParam until V2 init completes (current step %d)",
+                         static_cast<int>(_initStep.load()));
+        }
     }
 
     SonyDevice::SonyDevice(std::shared_ptr<DBusDeviceInfo> deviceInfo,

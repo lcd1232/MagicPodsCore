@@ -38,6 +38,14 @@ namespace MagicPodsCore
         bool TestIsSonyDeviceRejectsOtherVendor();
         bool TestIsSonyDeviceRejectsUnknownProductId();
 
+        // ANC set deferral (pure)
+        bool TestDeferredAncSendsImmediatelyIfReady();
+        bool TestDeferredAncBuffersWhenNotReady();
+        bool TestDeferredAncFlushesOnInitComplete();
+        bool TestDeferredAncFlushReturnsNothingIfNothingBuffered();
+        bool TestDeferredAncOnlyKeepsLatestRequest();
+        bool TestDeferredAncSubmitImmediateClearsAnyBufferedRequest();
+
         // V2 init watchdog (pure)
         bool TestWatchdogRetriesProtocolInfoAfterTimeout();
         bool TestWatchdogRetriesEachAwaitingStepAfterTimeout();

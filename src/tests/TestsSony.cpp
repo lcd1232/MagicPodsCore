@@ -5,6 +5,7 @@
 #include "TestsSony.h"
 
 #include "Logger.h"
+#include "sdk/sony/SonyDeferredAncSet.h"
 #include "sdk/sony/SonyHelper.h"
 #include "sdk/sony/SonyInitStateMachine.h"
 #include "sdk/sony/SonyInitWatchdog.h"
@@ -389,6 +390,99 @@ namespace MagicPodsCore
         }
     }
 
+    // ---- ANC set deferral ----
+    //
+    // Repro: after a plugin-driven Disconnect/Connect cycle the V2 handshake
+    // restarts. If the user touches the ANC slider during the few seconds
+    // it takes init to finish, the SetParam frame goes out interleaved
+    // with init queries and the WH-1000XM6 silently drops it - their click
+    // appears to do nothing, even though a second click after init
+    // completes works. SonyDeferredAncSet buffers the request while init
+    // is mid-flight and dispatches it once init reaches Complete.
+
+    bool TestsSony::TestDeferredAncSendsImmediatelyIfReady()
+    {
+        SonyDeferredAncSet d;
+        SonyAncState s;
+        s.MasterEnabled = SonyNcAsmOnOff::On;
+        s.Mode = SonyNcAsmMode::Asm;
+        const auto out = d.Submit(s, /*initComplete=*/true);
+        return out.has_value()
+            && out->MasterEnabled == SonyNcAsmOnOff::On
+            && out->Mode == SonyNcAsmMode::Asm;
+    }
+
+    bool TestsSony::TestDeferredAncBuffersWhenNotReady()
+    {
+        SonyDeferredAncSet d;
+        SonyAncState s;
+        s.MasterEnabled = SonyNcAsmOnOff::On;
+        const auto out = d.Submit(s, /*initComplete=*/false);
+        return !out.has_value();
+    }
+
+    bool TestsSony::TestDeferredAncFlushesOnInitComplete()
+    {
+        SonyDeferredAncSet d;
+        SonyAncState s;
+        s.MasterEnabled = SonyNcAsmOnOff::On;
+        s.Mode = SonyNcAsmMode::Nc;
+        d.Submit(s, /*initComplete=*/false);
+        const auto flushed = d.Flush();
+        return flushed.has_value()
+            && flushed->MasterEnabled == SonyNcAsmOnOff::On
+            && flushed->Mode == SonyNcAsmMode::Nc;
+    }
+
+    bool TestsSony::TestDeferredAncFlushReturnsNothingIfNothingBuffered()
+    {
+        SonyDeferredAncSet d;
+        const auto flushed = d.Flush();
+        return !flushed.has_value();
+    }
+
+    bool TestsSony::TestDeferredAncOnlyKeepsLatestRequest()
+    {
+        // Rapid slider drags should produce only one final dispatch with
+        // the user's most-recent intent, not a flurry of stale Set frames.
+        SonyDeferredAncSet d;
+        SonyAncState s1;
+        s1.MasterEnabled = SonyNcAsmOnOff::Off;
+        SonyAncState s2;
+        s2.MasterEnabled = SonyNcAsmOnOff::On;
+        s2.Mode = SonyNcAsmMode::Asm;
+        d.Submit(s1, /*initComplete=*/false);
+        d.Submit(s2, /*initComplete=*/false);
+        const auto flushed = d.Flush();
+        return flushed.has_value()
+            && flushed->MasterEnabled == SonyNcAsmOnOff::On
+            && flushed->Mode == SonyNcAsmMode::Asm;
+    }
+
+    bool TestsSony::TestDeferredAncSubmitImmediateClearsAnyBufferedRequest()
+    {
+        // If we buffered something while init was running and then init
+        // happens to complete *before* a follow-up user click, the
+        // already-flushed pending state shouldn't fire a second time when
+        // the next click arrives with initComplete=true.
+        SonyDeferredAncSet d;
+        SonyAncState s1;
+        s1.MasterEnabled = SonyNcAsmOnOff::Off;
+        SonyAncState s2;
+        s2.MasterEnabled = SonyNcAsmOnOff::On;
+
+        d.Submit(s1, /*initComplete=*/false);
+        // ... then init completes and the caller flushes:
+        d.Flush();
+        // ... and a fresh user click arrives with init now done:
+        const auto out = d.Submit(s2, /*initComplete=*/true);
+        // ... and the next Flush should be empty (nothing to re-send):
+        const auto residual = d.Flush();
+        return out.has_value()
+            && out->MasterEnabled == SonyNcAsmOnOff::On
+            && !residual.has_value();
+    }
+
     // ---- V2 init watchdog ----
     //
     // Repro for the bug observed after a Steam Deck reboot at 15:06:33 on
@@ -607,6 +701,13 @@ namespace MagicPodsCore
         Test("SonyHelper.IsSonyDeviceMatchesWh1000xm6", TestIsSonyDeviceMatchesWh1000xm6());
         Test("SonyHelper.IsSonyDeviceRejectsOtherVendor", TestIsSonyDeviceRejectsOtherVendor());
         Test("SonyHelper.IsSonyDeviceRejectsUnknownProductId", TestIsSonyDeviceRejectsUnknownProductId());
+
+        Test("SonyDeferredAncSet.SendsImmediatelyIfReady", TestDeferredAncSendsImmediatelyIfReady());
+        Test("SonyDeferredAncSet.BuffersWhenNotReady", TestDeferredAncBuffersWhenNotReady());
+        Test("SonyDeferredAncSet.FlushesOnInitComplete", TestDeferredAncFlushesOnInitComplete());
+        Test("SonyDeferredAncSet.FlushReturnsNothingIfNothingBuffered", TestDeferredAncFlushReturnsNothingIfNothingBuffered());
+        Test("SonyDeferredAncSet.OnlyKeepsLatestRequest", TestDeferredAncOnlyKeepsLatestRequest());
+        Test("SonyDeferredAncSet.SubmitImmediateClearsAnyBufferedRequest", TestDeferredAncSubmitImmediateClearsAnyBufferedRequest());
 
         Test("SonyInitWatchdog.RetriesProtocolInfoAfterTimeout", TestWatchdogRetriesProtocolInfoAfterTimeout());
         Test("SonyInitWatchdog.RetriesEachAwaitingStepAfterTimeout", TestWatchdogRetriesEachAwaitingStepAfterTimeout());
